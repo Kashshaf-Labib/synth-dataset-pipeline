@@ -1,0 +1,43 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Jupyter Notebook checkpoints
+*.ipynb_checkpoints
+
+# Environment files
+.env
+*.env
+
+.venv
+*.venv
+
+# Output and generated files
+output/
+output/images/
+output/metadata.json
+
+# CSV and data files
+*.csv
+
+# Pydantic cache (if used)
+*.mypy_cache/
+*.pydantic_cache/
+
+# IDE/editor files
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pip and virtualenv
+*.egg-info/
+dist/
+build/
+venv/
+ENV/
+env/
