@@ -1,14 +1,13 @@
 """
-Prompt Builder — uses LangChain + ChatGPT to extract a StructuredRadiologyPrompt
+Prompt Builder — uses LangChain + ChatGPT/Gemini to extract a StructuredRadiologyPrompt
 from a raw radiology report.
 """
 
 from __future__ import annotations
 
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
-from .config import OPENAI_API_KEY, CHAT_MODEL
+from .config import OPENAI_API_KEY, GOOGLE_API_KEY, CHAT_MODEL
 from .models import ReportRecord, StructuredRadiologyPrompt
 
 
@@ -49,16 +48,33 @@ IMPRESSION:
 """
 
 
+def _is_gemini_model(model_name: str) -> bool:
+    """Check if the model name refers to a Google Gemini model."""
+    return model_name.lower().startswith("gemini")
+
+
 def build_prompt_chain():
     """
     Create a LangChain chain that extracts a StructuredRadiologyPrompt
-    from a ReportRecord.
+    from a ReportRecord.  Automatically selects OpenAI or Gemini backend
+    based on the CHAT_MODEL config value.
     """
-    llm = ChatOpenAI(
-        model=CHAT_MODEL,
-        api_key=OPENAI_API_KEY,
-        temperature=0.0,
-    )
+    if _is_gemini_model(CHAT_MODEL):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        llm = ChatGoogleGenerativeAI(
+            model=CHAT_MODEL,
+            google_api_key=GOOGLE_API_KEY,
+            temperature=0.0,
+        )
+    else:
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=CHAT_MODEL,
+            api_key=OPENAI_API_KEY,
+            temperature=0.0,
+        )
 
     # Use structured output to guarantee valid Pydantic model
     structured_llm = llm.with_structured_output(StructuredRadiologyPrompt)

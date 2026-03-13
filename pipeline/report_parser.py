@@ -26,8 +26,7 @@ def load_reports(
 
     Returns
     -------
-    list[ReportRecord]  — only rows where at least one of findings/impression
-                          is non-empty.
+    list[ReportRecord]  — only rows where at least one of findings/impression is non-empty.
     """
     df = pd.read_csv(csv_path)
 
