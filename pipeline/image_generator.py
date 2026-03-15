@@ -63,18 +63,31 @@ def generate_image_gemini(prompt: str, uid: int, max_retries: int = 3) -> Path:
     Generate an image with Google Vertex AI Imagen model.
 
     Uses Vertex AI SDK with Application Default Credentials (ADC).
+    Imagen requires a regional endpoint (us-central1), not 'global'.
     Returns the path to the saved PNG file.
     """
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel
 
-    # Initialize Vertex AI with project/location from config
-    vertexai.init(project=config.GCP_PROJECT_ID, location=config.GCP_LOCATION)
+    # Imagen requires a regional location, not 'global'
+    imagen_location = "us-central1"
+    vertexai.init(project=config.GCP_PROJECT_ID, location=imagen_location)
 
     output_path = config.IMAGES_DIR / f"{uid}.png"
 
-    # Use Imagen model via Vertex AI
-    imagen_model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
+    # Try model versions in order of preference
+    # model_names = ["imagen-3.0-generate-002", "imagen-3.0-generate-001"]
+    model_names = ["imagen-4.0-ultra-generate-001", "imagen-3.0-generate-002", "imagen-3.0-generate-001"]
+
+    for model_name in model_names:
+        try:
+            imagen_model = ImageGenerationModel.from_pretrained(model_name)
+            print(f"  Using Imagen model: {model_name} (location: {imagen_location})")
+            break
+        except Exception:
+            continue
+    else:
+        raise RuntimeError(f"No Imagen model available. Tried: {model_names}")
 
     for attempt in range(1, max_retries + 1):
         try:
