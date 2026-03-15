@@ -14,9 +14,13 @@ load_dotenv(_env_path)
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
 
+# ── Vertex AI settings ──────────────────────────────────────────────────────
+GCP_PROJECT_ID: str = os.getenv("GCP_PROJECT_ID", "")
+GCP_LOCATION: str = os.getenv("GCP_LOCATION", "us-central1")
+
 # ── Model settings ───────────────────────────────────────────────────────────
-CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gpt-4o-mini")
-IMAGE_GENERATOR: str = os.getenv("IMAGE_GENERATOR", "dalle")  # "dalle" or "gemini"
+CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gemini-2.0-flash")
+IMAGE_GENERATOR: str = os.getenv("IMAGE_GENERATOR", "gemini")  # "dalle" or "gemini"
 DALLE_MODEL: str = os.getenv("DALLE_MODEL", "dall-e-3")
 DALLE_IMAGE_SIZE: str = os.getenv("DALLE_IMAGE_SIZE", "1024x1024")
 DALLE_IMAGE_QUALITY: str = os.getenv("DALLE_IMAGE_QUALITY", "standard")

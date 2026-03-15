@@ -1,5 +1,5 @@
 """
-Prompt Builder — uses LangChain + ChatGPT/Gemini to extract a StructuredRadiologyPrompt
+Prompt Builder — uses LangChain + Vertex AI Gemini to extract a StructuredRadiologyPrompt
 from a raw radiology report.
 """
 
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from .config import OPENAI_API_KEY, GOOGLE_API_KEY, CHAT_MODEL
+from .config import OPENAI_API_KEY, GCP_PROJECT_ID, GCP_LOCATION, CHAT_MODEL
 from .models import ReportRecord, StructuredRadiologyPrompt
 
 
@@ -56,15 +56,16 @@ def _is_gemini_model(model_name: str) -> bool:
 def build_prompt_chain():
     """
     Create a LangChain chain that extracts a StructuredRadiologyPrompt
-    from a ReportRecord.  Automatically selects OpenAI or Gemini backend
+    from a ReportRecord.  Automatically selects OpenAI or Vertex AI Gemini
     based on the CHAT_MODEL config value.
     """
     if _is_gemini_model(CHAT_MODEL):
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_google_vertexai import ChatVertexAI
 
-        llm = ChatGoogleGenerativeAI(
-            model=CHAT_MODEL,
-            google_api_key=GOOGLE_API_KEY,
+        llm = ChatVertexAI(
+            model_name=CHAT_MODEL,
+            project=GCP_PROJECT_ID,
+            location=GCP_LOCATION,
             temperature=0.0,
         )
     else:
@@ -95,7 +96,7 @@ def extract_structured_prompt(
     chain=None,
 ) -> StructuredRadiologyPrompt:
     """
-    Given a ReportRecord, call ChatGPT to produce a StructuredRadiologyPrompt.
+    Given a ReportRecord, call the LLM to produce a StructuredRadiologyPrompt.
 
     Parameters
     ----------

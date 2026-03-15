@@ -1,6 +1,6 @@
 """
 Image Generator — generates synthetic radiology images using DALL-E 3 or
-Google Gemini Imagen, driven by the formatted text prompt.
+Google Vertex AI Imagen, driven by the formatted text prompt.
 """
 
 from __future__ import annotations
@@ -56,21 +56,25 @@ def generate_image_dalle(prompt: str, uid: int, max_retries: int = 3) -> Path:
     return output_path  # unreachable but satisfies type checker
 
 
-# ─── Google Gemini Imagen ────────────────────────────────────────────────────
+# ─── Google Vertex AI Imagen ─────────────────────────────────────────────────
 
 def generate_image_gemini(prompt: str, uid: int, max_retries: int = 3) -> Path:
     """
-    Generate an image with Google Gemini's Imagen model.
+    Generate an image with Google Vertex AI Imagen model.
 
+    Uses Vertex AI SDK with Application Default Credentials (ADC).
     Returns the path to the saved PNG file.
     """
-    import google.generativeai as genai
+    import vertexai
+    from vertexai.preview.vision_models import ImageGenerationModel
 
-    genai.configure(api_key=config.GOOGLE_API_KEY)
+    # Initialize Vertex AI with project/location from config
+    vertexai.init(project=config.GCP_PROJECT_ID, location=config.GCP_LOCATION)
+
     output_path = config.IMAGES_DIR / f"{uid}.png"
 
-    # Use the Imagen model via Gemini
-    imagen_model = genai.ImageGenerationModel("imagen-3.0-generate-002")
+    # Use Imagen model via Vertex AI
+    imagen_model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -81,17 +85,17 @@ def generate_image_gemini(prompt: str, uid: int, max_retries: int = 3) -> Path:
             )
 
             # Save the first generated image
-            result.images[0]._pil_image.save(output_path)
+            result.images[0].save(str(output_path))
             return output_path
 
         except Exception as e:
             if attempt < max_retries:
                 wait = 2 ** attempt
-                print(f"  ⚠ Gemini attempt {attempt} failed: {e}. Retrying in {wait}s...")
+                print(f"  ⚠ Vertex AI attempt {attempt} failed: {e}. Retrying in {wait}s...")
                 time.sleep(wait)
             else:
                 raise RuntimeError(
-                    f"Gemini generation failed for uid={uid} after {max_retries} attempts: {e}"
+                    f"Vertex AI image generation failed for uid={uid} after {max_retries} attempts: {e}"
                 ) from e
 
     return output_path  # unreachable
