@@ -21,6 +21,7 @@ GCP_LOCATION: str = os.getenv("GCP_LOCATION", "us-central1")
 # ── Model settings ───────────────────────────────────────────────────────────
 CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gemini-2.0-flash")
 IMAGE_GENERATOR: str = os.getenv("IMAGE_GENERATOR", "gemini")  # "dalle" or "gemini"
+GEMINI_IMAGE_MODEL: str = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 DALLE_MODEL: str = os.getenv("DALLE_MODEL", "dall-e-3")
 DALLE_IMAGE_SIZE: str = os.getenv("DALLE_IMAGE_SIZE", "1024x1024")
 DALLE_IMAGE_QUALITY: str = os.getenv("DALLE_IMAGE_QUALITY", "standard")

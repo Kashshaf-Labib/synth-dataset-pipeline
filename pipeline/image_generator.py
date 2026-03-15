@@ -46,7 +46,7 @@ def generate_image_dalle(prompt: str, uid: int, max_retries: int = 3) -> Path:
         except Exception as e:
             if attempt < max_retries:
                 wait = 2 ** attempt
-                print(f"  ⚠ DALL-E attempt {attempt} failed: {e}. Retrying in {wait}s...")
+                print(f"DALL-E attempt {attempt} failed: {e}. Retrying in {wait}s...")
                 time.sleep(wait)
             else:
                 raise RuntimeError(
@@ -56,59 +56,57 @@ def generate_image_dalle(prompt: str, uid: int, max_retries: int = 3) -> Path:
     return output_path  # unreachable but satisfies type checker
 
 
-# ─── Google Vertex AI Imagen ─────────────────────────────────────────────────
+# ─── Google Vertex AI Gemini Image Generation ────────────────────────────────
 
 def generate_image_gemini(prompt: str, uid: int, max_retries: int = 3) -> Path:
     """
-    Generate an image with Google Vertex AI Imagen model.
+    Generate an image with Google Gemini's native image generation via Vertex AI.
 
-    Uses Vertex AI SDK with Application Default Credentials (ADC).
-    Imagen requires a regional endpoint (us-central1), not 'global'.
+    Uses the google.genai Client with vertexai=True and the
+    gemini-2.5-flash-image model with response_modalities=["TEXT", "IMAGE"].
     Returns the path to the saved PNG file.
     """
-    import vertexai
-    from vertexai.preview.vision_models import ImageGenerationModel
+    from google import genai
+    from google.genai.types import GenerateContentConfig
 
-    # Imagen requires a regional location, not 'global'
-    imagen_location = "us-central1"
-    vertexai.init(project=config.GCP_PROJECT_ID, location=imagen_location)
+    client = genai.Client(
+        vertexai=True,
+        project=config.GCP_PROJECT_ID,
+        location=config.GCP_LOCATION,
+    )
 
+    model_id = config.GEMINI_IMAGE_MODEL
     output_path = config.IMAGES_DIR / f"{uid}.png"
-
-    # Try model versions in order of preference
-    # model_names = ["imagen-3.0-generate-002", "imagen-3.0-generate-001"]
-    model_names = ["imagen-4.0-ultra-generate-001", "imagen-3.0-generate-002", "imagen-3.0-generate-001"]
-
-    for model_name in model_names:
-        try:
-            imagen_model = ImageGenerationModel.from_pretrained(model_name)
-            print(f"  Using Imagen model: {model_name} (location: {imagen_location})")
-            break
-        except Exception:
-            continue
-    else:
-        raise RuntimeError(f"No Imagen model available. Tried: {model_names}")
 
     for attempt in range(1, max_retries + 1):
         try:
-            result = imagen_model.generate_images(
-                prompt=prompt,
-                number_of_images=1,
-                aspect_ratio="1:1",
+            response = client.models.generate_content(
+                model=model_id,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"],
+                    candidate_count=1,
+                ),
             )
 
-            # Save the first generated image
-            result.images[0].save(str(output_path))
-            return output_path
+            # Extract image data from response parts
+            for part in response.candidates[0].content.parts:
+                if part.inline_data:
+                    img = PILImage.open(BytesIO(part.inline_data.data))
+                    img.save(output_path)
+                    print(f"  ✓ Image saved: {output_path.name} (model: {model_id})")
+                    return output_path
+
+            raise RuntimeError("No image data found in response")
 
         except Exception as e:
             if attempt < max_retries:
                 wait = 2 ** attempt
-                print(f"  ⚠ Vertex AI attempt {attempt} failed: {e}. Retrying in {wait}s...")
+                print(f"  ⚠ Gemini attempt {attempt} failed: {e}. Retrying in {wait}s...")
                 time.sleep(wait)
             else:
                 raise RuntimeError(
-                    f"Vertex AI image generation failed for uid={uid} after {max_retries} attempts: {e}"
+                    f"Gemini image generation failed for uid={uid} after {max_retries} attempts: {e}"
                 ) from e
 
     return output_path  # unreachable
