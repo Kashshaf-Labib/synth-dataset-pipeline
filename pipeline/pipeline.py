@@ -1,7 +1,10 @@
 """
 Pipeline Orchestrator — end-to-end flow:
 
-  CSV  →  Report Parser  →  Structured Prompt (ChatGPT)  →  Image Prompt  →  DALL-E / Gemini
+  CSV  →  Report Parser  →  Structured Prompt (Gemini/GPT)  →  Image Prompt  →  DALL-E / Gemini
+                         ↑
+              Optional: indiana_projections.csv + images_dir
+              → reference images passed as multimodal input
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from . import config
-from .report_parser import load_reports
+from .report_parser import load_projections, load_reports
 from .prompt_builder import build_prompt_chain, extract_structured_prompt
 from .image_prompt_formatter import format_image_prompt
 from .image_generator import generate_image
@@ -25,6 +28,8 @@ def run_pipeline(
     limit: int | None = None,
     generator: str | None = None,
     skip_image_generation: bool = False,
+    projections_csv: str | Path | None = None,
+    images_dir: str | Path | None = None,
 ) -> list[dict]:
     """
     Execute the full pipeline.
@@ -35,19 +40,37 @@ def run_pipeline(
     limit                 : process only the first N reports
     generator             : "dalle" or "gemini" (overrides config)
     skip_image_generation : if True, stop after prompt generation (useful for testing)
+    projections_csv       : optional path to indiana_projections.csv.
+                            Required when images_dir is provided.
+    images_dir            : optional path to the directory containing the
+                            original X-ray PNG images (e.g. on Kaggle:
+                            /kaggle/input/.../images_normalized/).
+                            When provided along with projections_csv,
+                            reference images are passed as multimodal input.
 
     Returns
     -------
     list of metadata dicts for each processed report
     """
     gen = generator or config.IMAGE_GENERATOR
+    images_dir_path = Path(images_dir) if images_dir else None
 
+    # ── Load projections lookup (optional) ───────────────────────────────
+    projections = None
+    if projections_csv and images_dir_path:
+        print(f"🗂  Loading projections from {projections_csv} ...")
+        projections = load_projections(projections_csv)
+        print(f"   → {len(projections)} uids with projection data\n")
+    elif images_dir_path and not projections_csv:
+        print("⚠  --images-dir provided but --projections-csv is missing. Reference images disabled.\n")
+
+    # ── Load reports ─────────────────────────────────────────────────────
     print(f"📂 Loading reports from {csv_path} ...")
-    records = load_reports(csv_path, limit=limit)
+    records = load_reports(csv_path, limit=limit, projections=projections)
     print(f"   → {len(records)} reports loaded\n")
 
-    # Build the LangChain chain once (reused across all records)
-    print(f"🤖 Initializing ChatGPT chain (model: {config.CHAT_MODEL}) ...")
+    # ── Build the LangChain chain once (reused across all records) ────────
+    print(f"🤖 Initializing LLM chain (model: {config.CHAT_MODEL}) ...")
     chain = build_prompt_chain()
     print("   → Chain ready\n")
 
@@ -56,10 +79,12 @@ def run_pipeline(
     for record in tqdm(records, desc="Processing reports", unit="report"):
         entry: dict = {"uid": record.uid}
 
-        # ── Step 1: Extract structured prompt via ChatGPT ────────────────
+        # ── Step 1: Extract structured prompt via LLM ────────────────────
         try:
             structured = extract_structured_prompt(record, chain=chain)
-            entry["structured_prompt"] = structured.model_dump()
+            # Carry reference image metadata into the structured prompt
+            structured.reference_images = record.reference_images
+            entry["structured_prompt"] = structured.model_dump(exclude={"reference_images"})
         except Exception as e:
             print(f"\n  ✗ Failed to extract prompt for uid={record.uid}: {e}")
             entry["error_prompt"] = str(e)
@@ -70,10 +95,35 @@ def run_pipeline(
         image_prompt = format_image_prompt(structured)
         entry["image_prompt"] = image_prompt
 
-        # ── Step 3: Generate image ───────────────────────────────────────
+        # ── Step 3: Resolve reference image paths (if available) ─────────
+        ref_image_paths: list[Path] | None = None
+        if images_dir_path and record.reference_images:
+            resolved = []
+            for proj in record.reference_images:
+                img_path = images_dir_path / proj.filename
+                if img_path.exists():
+                    resolved.append(img_path)
+                else:
+                    tqdm.write(f"  ⚠ Reference image not found: {img_path}")
+            if resolved:
+                ref_image_paths = resolved
+                views = ", ".join(p.projection for p in record.reference_images if (images_dir_path / p.filename).exists())
+                tqdm.write(f"  📎 uid={record.uid} → {len(resolved)} reference image(s) ({views})")
+            # Record which files were used
+            entry["reference_images"] = [
+                {"filename": p.filename, "projection": p.projection}
+                for p in record.reference_images
+            ]
+
+        # ── Step 4: Generate image ───────────────────────────────────────
         if not skip_image_generation:
             try:
-                image_path = generate_image(image_prompt, record.uid, generator=gen)
+                image_path = generate_image(
+                    image_prompt,
+                    record.uid,
+                    generator=gen,
+                    image_paths=ref_image_paths,
+                )
                 entry["image_path"] = str(image_path)
                 tqdm.write(f"  ✓ uid={record.uid} → {image_path.name}")
             except Exception as e:
@@ -105,6 +155,25 @@ def main():
         help="Path to the Indiana reports CSV file",
     )
     parser.add_argument(
+        "--projections-csv",
+        type=str,
+        default=None,
+        help=(
+            "Path to indiana_projections.csv. "
+            "Required when --images-dir is provided to enable reference image input."
+        ),
+    )
+    parser.add_argument(
+        "--images-dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory containing original X-ray PNG images. "
+            "On Kaggle: /kaggle/input/chest-xrays-indiana-university/images/images_normalized. "
+            "When provided with --projections-csv, images are passed as multimodal input to Gemini."
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -130,6 +199,8 @@ def main():
         limit=args.limit,
         generator=args.generator,
         skip_image_generation=args.skip_images,
+        projections_csv=args.projections_csv,
+        images_dir=args.images_dir,
     )
 
 

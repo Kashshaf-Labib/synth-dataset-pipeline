@@ -14,8 +14,25 @@ def format_image_prompt(sp: StructuredRadiologyPrompt) -> str:
     used by DALL-E / Gemini.
 
     Sections whose source data is None are omitted entirely.
+    When reference_images are present, a [REFERENCE IMAGES] section is
+    prepended to inform the model to treat the attached images as
+    anatomical/structural references.
     """
     sections: list[str] = []
+
+    # ── REFERENCE IMAGES (when images are provided) ──────────────────────
+    if sp.reference_images:
+        view_list = ", ".join(
+            f"{img.projection} ({img.filename})" for img in sp.reference_images
+        )
+        sections.append(
+            "[REFERENCE IMAGES]\n"
+            f"The following real chest X-ray images are provided as anatomical "
+            f"and structural reference ({view_list}). "
+            "Use these images to accurately replicate the patient's anatomy, "
+            "body habitus, and image geometry. Apply the clinical findings "
+            "described below to generate a realistic synthetic variant."
+        )
 
     # ── MODALITY CONDITIONING ────────────────────────────────────────────
     if sp.modality or sp.plane_view:

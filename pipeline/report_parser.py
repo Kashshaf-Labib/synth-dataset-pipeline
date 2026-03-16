@@ -1,6 +1,7 @@
 """
 Report Parser — reads the Indiana Chest X-ray reports CSV and returns
-a list of ReportRecord objects.
+a list of ReportRecord objects. Optionally enriches records with
+reference image filenames from indiana_projections.csv.
 """
 
 from __future__ import annotations
@@ -9,20 +10,52 @@ from typing import Optional
 
 import pandas as pd
 
-from .models import ReportRecord
+from .models import ImageProjection, ReportRecord
+
+
+def load_projections(
+    projections_csv: str | Path,
+) -> dict[int, list[ImageProjection]]:
+    """
+    Load indiana_projections.csv and build a uid → list[ImageProjection] lookup.
+
+    Parameters
+    ----------
+    projections_csv : path to indiana_projections.csv
+
+    Returns
+    -------
+    dict mapping uid (int) → list of ImageProjection objects
+    """
+    df = pd.read_csv(projections_csv)
+
+    lookup: dict[int, list[ImageProjection]] = {}
+    for _, row in df.iterrows():
+        uid = int(row["uid"])
+        proj = ImageProjection(
+            filename=str(row["filename"]),
+            projection=str(row["projection"]),
+        )
+        lookup.setdefault(uid, []).append(proj)
+
+    return lookup
 
 
 def load_reports(
     csv_path: str | Path,
     limit: Optional[int] = None,
+    projections: Optional[dict[int, list[ImageProjection]]] = None,
 ) -> list[ReportRecord]:
     """
     Load radiology reports from the CSV.
 
     Parameters
     ----------
-    csv_path : path to indiana_reports.csv
-    limit    : optional cap on number of records returned
+    csv_path    : path to indiana_reports.csv
+    limit       : optional cap on number of records returned
+    projections : optional uid→projections lookup from load_projections().
+                  When provided, each ReportRecord will have its
+                  reference_images field populated.
 
     Returns
     -------
@@ -46,9 +79,11 @@ def load_reports(
 
     records: list[ReportRecord] = []
     for _, row in df.iterrows():
+        uid = int(row["uid"])
+        ref_images = projections.get(uid, []) if projections else []
         records.append(
             ReportRecord(
-                uid=int(row["uid"]),
+                uid=uid,
                 MeSH=str(row["MeSH"]),
                 Problems=str(row["Problems"]),
                 image=str(row["image"]),
@@ -56,6 +91,7 @@ def load_reports(
                 comparison=str(row["comparison"]),
                 findings=str(row["findings"]),
                 impression=str(row["impression"]),
+                reference_images=ref_images,
             )
         )
 

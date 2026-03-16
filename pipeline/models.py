@@ -7,6 +7,13 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class ImageProjection(BaseModel):
+    """A single projection image entry from indiana_projections.csv."""
+
+    filename: str
+    projection: str  # e.g. "Frontal", "Lateral"
+
+
 class ReportRecord(BaseModel):
     """Represents a single row from the Indiana Chest X-ray reports CSV."""
 
@@ -18,6 +25,9 @@ class ReportRecord(BaseModel):
     comparison: str = Field(default="")
     findings: str = Field(default="")
     impression: str = Field(default="")
+
+    # Optional: populated when indiana_projections.csv is provided
+    reference_images: list[ImageProjection] = Field(default_factory=list)
 
     class Config:
         populate_by_name = True
@@ -61,3 +71,6 @@ class StructuredRadiologyPrompt(BaseModel):
         default=None,
         description="Specific imaging characteristics like tissue density, contrast patterns",
     )
+
+    # Carries reference image info through to prompt formatting and generation
+    reference_images: list[ImageProjection] = Field(default_factory=list)
