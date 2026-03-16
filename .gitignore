@@ -19,9 +19,6 @@ output/
 output/images/
 output/metadata.json
 
-# CSV and data files
-*.csv
-
 # Pydantic cache (if used)
 *.mypy_cache/
 *.pydantic_cache/
