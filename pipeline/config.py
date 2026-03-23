@@ -17,6 +17,8 @@ GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
 # ── Vertex AI settings ──────────────────────────────────────────────────────
 GCP_PROJECT_ID: str = os.getenv("GCP_PROJECT_ID", "")
 GCP_LOCATION: str = os.getenv("GCP_LOCATION", "us-central1")
+GCP_IMAGE_LOCATION: str = os.getenv("GCP_IMAGE_LOCATION", "global")
+VERTEX_ENDPOINT_ID: str = os.getenv("VERTEX_ENDPOINT_ID", "")
 
 # ── Model settings ───────────────────────────────────────────────────────────
 CHAT_MODEL: str = os.getenv("CHAT_MODEL", "gemini-2.0-flash")

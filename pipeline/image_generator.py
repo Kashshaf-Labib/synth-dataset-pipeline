@@ -90,7 +90,7 @@ def generate_image_gemini(
     client = genai.Client(
         vertexai=True,
         project=config.GCP_PROJECT_ID,
-        location=config.GCP_LOCATION,
+        location=config.GCP_IMAGE_LOCATION,
     )
 
     model_id = config.GEMINI_IMAGE_MODEL
