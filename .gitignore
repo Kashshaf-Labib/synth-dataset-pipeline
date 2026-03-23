@@ -39,3 +39,4 @@ venv/
 ENV/
 env/*service-account*.json
 *credentials*.json
+project-*.json
