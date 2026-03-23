@@ -37,4 +37,5 @@ dist/
 build/
 venv/
 ENV/
-env/
+env/*service-account*.json
+*credentials*.json

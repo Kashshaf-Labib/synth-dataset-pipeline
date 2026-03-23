@@ -49,8 +49,9 @@ IMPRESSION:
 
 
 def _is_gemini_model(model_name: str) -> bool:
-    """Check if the model name refers to a Google Gemini model."""
-    return model_name.lower().startswith("gemini")
+    """Check if the model name refers to a Google / Vertex AI model."""
+    vertex_prefixes = ("gemini", "medlm", "med-palm", "medpalm", "claude")
+    return model_name.lower().startswith(vertex_prefixes)
 
 
 def build_prompt_chain():
