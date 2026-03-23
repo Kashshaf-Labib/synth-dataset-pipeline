@@ -1,13 +1,22 @@
 """
-Prompt Builder — uses LangChain + Vertex AI Gemini to extract a StructuredRadiologyPrompt
-from a raw radiology report.
+Prompt Builder — uses LangChain + Vertex AI Gemini (or a custom Vertex AI
+endpoint) to extract a StructuredRadiologyPrompt from a raw radiology report.
 """
 
 from __future__ import annotations
 
+import json
+import re
+
 from langchain_core.prompts import ChatPromptTemplate
 
-from .config import OPENAI_API_KEY, GCP_PROJECT_ID, GCP_LOCATION, CHAT_MODEL
+from .config import (
+    OPENAI_API_KEY,
+    GCP_PROJECT_ID,
+    GCP_LOCATION,
+    CHAT_MODEL,
+    VERTEX_ENDPOINT_ID,
+)
 from .models import ReportRecord, StructuredRadiologyPrompt
 
 
@@ -48,19 +57,47 @@ IMPRESSION:
 """
 
 
-def _is_gemini_model(model_name: str) -> bool:
+def _is_vertex_model(model_name: str) -> bool:
     """Check if the model name refers to a Google / Vertex AI model."""
-    vertex_prefixes = ("gemini", "medlm", "med-palm", "medpalm", "claude")
+    vertex_prefixes = ("gemini", "medlm", "med-palm", "medpalm", "claude", "google/")
     return model_name.lower().startswith(vertex_prefixes)
 
+
+def _use_custom_endpoint() -> bool:
+    """Check if a custom Vertex AI endpoint should be used."""
+    return bool(VERTEX_ENDPOINT_ID)
+
+
+def _extract_json_from_text(text: str) -> dict:
+    """Extract a JSON object from model response text (handles markdown fences)."""
+    # Try to find JSON in markdown code blocks first
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if match:
+        return json.loads(match.group(1).strip())
+    # Try direct JSON parse
+    # Find the first { and last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1:
+        return json.loads(text[start : end + 1])
+    raise ValueError(f"Could not extract JSON from response: {text[:200]}")
+
+
+# ─── Standard LangChain path (Gemini / OpenAI) ──────────────────────────────
 
 def build_prompt_chain():
     """
     Create a LangChain chain that extracts a StructuredRadiologyPrompt
     from a ReportRecord.  Automatically selects OpenAI or Vertex AI Gemini
     based on the CHAT_MODEL config value.
+
+    Returns None if a custom endpoint is configured (handled separately).
     """
-    if _is_gemini_model(CHAT_MODEL):
+    if _use_custom_endpoint():
+        # Custom endpoint — handled by extract_structured_prompt_endpoint()
+        return None
+
+    if _is_vertex_model(CHAT_MODEL):
         from langchain_google_vertexai import ChatVertexAI
 
         llm = ChatVertexAI(
@@ -92,6 +129,65 @@ def build_prompt_chain():
     return chain
 
 
+# ─── Custom Vertex AI Endpoint path ─────────────────────────────────────────
+
+def _call_vertex_endpoint(user_message: str) -> str:
+    """Send a prompt to the custom MedGemma Vertex AI endpoint and return raw text."""
+    from google.cloud import aiplatform
+
+    aiplatform.init(project=GCP_PROJECT_ID, location=GCP_LOCATION, api_transport="rest")
+    endpoint = aiplatform.Endpoint(endpoint_name=VERTEX_ENDPOINT_ID, location=GCP_LOCATION)
+
+    messages = [
+        {
+            "role": "system",
+            "content": _SYSTEM_PROMPT + "\n\nReturn ONLY valid JSON, no other text.",
+        },
+        {
+            "role": "user",
+            "content": user_message,
+        },
+    ]
+
+    instances = [
+        {
+            "@requestFormat": "chatCompletions",
+            "messages": messages,
+            "max_tokens": 2048,
+            "temperature": 0,
+        },
+    ]
+
+    response = endpoint.predict(
+        instances=instances, use_dedicated_endpoint=True
+    )
+
+    # Response format: predictions["choices"][0]["message"]["content"]
+    raw_text = response.predictions["choices"][0]["message"]["content"]
+    print(f"  [DEBUG] Endpoint raw response (first 300 chars): {raw_text[:300]}")
+    return raw_text
+
+
+def extract_structured_prompt_endpoint(record: ReportRecord) -> StructuredRadiologyPrompt:
+    """Extract structured prompt using a custom deployed Vertex AI endpoint."""
+    user_msg = _USER_TEMPLATE.format(
+        uid=record.uid,
+        image=record.image,
+        indication=record.indication,
+        comparison=record.comparison,
+        mesh=record.mesh,
+        problems=record.problems,
+        findings=record.findings,
+        impression=record.impression,
+    )
+
+    raw_response = _call_vertex_endpoint(user_msg)
+    parsed = _extract_json_from_text(raw_response)
+    return StructuredRadiologyPrompt(**parsed)
+
+
+# ─── Unified entry point ────────────────────────────────────────────────────
+
 def extract_structured_prompt(
     record: ReportRecord,
     chain=None,
@@ -102,12 +198,18 @@ def extract_structured_prompt(
     Parameters
     ----------
     record : ReportRecord
-    chain  : optional pre-built chain (avoids re-creating per call)
+    chain  : optional pre-built chain (avoids re-creating per call).
+             Ignored when using a custom endpoint.
 
     Returns
     -------
     StructuredRadiologyPrompt
     """
+    # Custom endpoint path
+    if _use_custom_endpoint():
+        return extract_structured_prompt_endpoint(record)
+
+    # Standard LangChain path
     if chain is None:
         chain = build_prompt_chain()
 
@@ -125,3 +227,4 @@ def extract_structured_prompt(
     )
 
     return result
+
