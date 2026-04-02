@@ -62,14 +62,13 @@ def format_image_prompt(sp: StructuredRadiologyPrompt) -> str:
         )
 
     # ── TEXTUAL PROMPTING — CLINICAL DESCRIPTION ─────────────────────────
-    if sp.findings or sp.impression:
-        parts: list[str] = []
-        if sp.findings:
-            parts.append(f"Radiological findings include: {sp.findings}")
-        if sp.impression:
-            parts.append(f"Impression: {sp.impression}")
+    # NOTE: impression is intentionally excluded — it must NOT appear as
+    # rendered text or an overlay in the image. Only radiological findings
+    # are used to condition the visual appearance of the X-ray.
+    if sp.findings:
         sections.append(
-            "[TEXTUAL PROMPTING — CLINICAL DESCRIPTION]\n" + " ".join(parts)
+            "[TEXTUAL PROMPTING — CLINICAL DESCRIPTION]\n"
+            f"Radiological findings include: {sp.findings}"
         )
 
     # ── ANATOMICAL CONSTRAINTS ───────────────────────────────────────────
@@ -95,6 +94,20 @@ def format_image_prompt(sp: StructuredRadiologyPrompt) -> str:
 
     sections.append(
         "[IMAGING CHARACTERISTICS]\n" + full_characteristics + "."
+    )
+
+    # ── NEGATIVE / EXCLUSION CONSTRAINTS ────────────────────────────────
+    sections.append(
+        "[NEGATIVE CONSTRAINTS — STRICT]\n"
+        "Do NOT render any text, letters, words, numbers, labels, captions, "
+        "annotations, impression boxes, report panels, diagnostic summaries, "
+        "overlaid text blocks, scrollbars, UI elements, or any written content "
+        "anywhere in the image. The output must be a pure radiograph image only — "
+        "no impression section, no findings text, no header bars with hospital "
+        "names or dates, no patient information overlays. "
+        "The image must look exactly like a raw, unadorned clinical X-ray film "
+        "as it appears on a radiologist's lightbox or PACS viewer without any "
+        "annotation layer."
     )
 
     return "\n\n".join(sections)
