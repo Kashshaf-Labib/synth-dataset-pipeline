@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_env_path)
 
+# ── Environment detection ────────────────────────────────────────────────────
+IS_KAGGLE: bool = "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+
 # ── API keys ─────────────────────────────────────────────────────────────────
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")

@@ -12,10 +12,12 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from .config import (
     OPENAI_API_KEY,
+    GOOGLE_API_KEY,
     GCP_PROJECT_ID,
     GCP_LOCATION,
     CHAT_MODEL,
     VERTEX_ENDPOINT_ID,
+    IS_KAGGLE,
 )
 from .models import ReportRecord, StructuredRadiologyPrompt
 
@@ -98,14 +100,26 @@ def build_prompt_chain():
         return None
 
     if _is_vertex_model(CHAT_MODEL):
-        from langchain_google_vertexai import ChatVertexAI
+        if IS_KAGGLE:
+            # Kaggle's kaggle_gcp.py triggers a circular import when
+            # langchain_google_vertexai loads google.cloud.aiplatform.
+            # Use ChatGoogleGenerativeAI with a plain API key instead.
+            from langchain_google_genai import ChatGoogleGenerativeAI
 
-        llm = ChatVertexAI(
-            model_name=CHAT_MODEL,
-            project=GCP_PROJECT_ID,
-            location=GCP_LOCATION,
-            temperature=0.0,
-        )
+            llm = ChatGoogleGenerativeAI(
+                model=CHAT_MODEL,
+                google_api_key=GOOGLE_API_KEY,
+                temperature=0.0,
+            )
+        else:
+            from langchain_google_vertexai import ChatVertexAI
+
+            llm = ChatVertexAI(
+                model_name=CHAT_MODEL,
+                project=GCP_PROJECT_ID,
+                location=GCP_LOCATION,
+                temperature=0.0,
+            )
     else:
         from langchain_openai import ChatOpenAI
 

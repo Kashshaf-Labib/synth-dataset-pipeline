@@ -94,11 +94,16 @@ def generate_image_gemini(
     from google import genai
     from google.genai import types as genai_types
 
-    client = genai.Client(
-        vertexai=True,
-        project=config.GCP_PROJECT_ID,
-        location=config.GCP_IMAGE_LOCATION,
-    )
+    if config.IS_KAGGLE:
+        # Kaggle's kaggle_gcp.py causes a circular import with Vertex AI.
+        # Use plain API key auth instead.
+        client = genai.Client(api_key=config.GOOGLE_API_KEY)
+    else:
+        client = genai.Client(
+            vertexai=True,
+            project=config.GCP_PROJECT_ID,
+            location=config.GCP_IMAGE_LOCATION,
+        )
 
     model_id = config.GEMINI_IMAGE_MODEL
     filename = f"{uid}_{view_suffix}.png" if view_suffix else f"{uid}.png"
