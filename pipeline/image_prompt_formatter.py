@@ -44,6 +44,15 @@ def format_image_prompt(sp: StructuredRadiologyPrompt) -> str:
             "diagnostic imaging acquired using real-world hospital protocols."
         )
 
+    # ── SINGLE VIEW DIRECTIVE (when split from a multi-view report) ──────
+    if sp.view:
+        sections.append(
+            "[SINGLE VIEW DIRECTIVE]\n"
+            f"Generate ONLY a single {sp.view} view radiograph. "
+            "Do NOT combine multiple views or projections side by side "
+            "in one image. The output must show exactly one projection."
+        )
+
     # ── ANATOMICAL PROMPTING ─────────────────────────────────────────────
     if sp.anatomical_region:
         sections.append(

@@ -72,5 +72,12 @@ class StructuredRadiologyPrompt(BaseModel):
         description="Specific imaging characteristics like tissue density, contrast patterns",
     )
 
+    # Set by the view splitter (not the LLM) when a multi-view report is
+    # split into separate per-view prompts (e.g. "PA", "Lateral").
+    view: Optional[str] = Field(
+        default=None,
+        description="Specific view for this prompt when split from a multi-view report",
+    )
+
     # Carries reference image info through to prompt formatting and generation
     reference_images: list[ImageProjection] = Field(default_factory=list)

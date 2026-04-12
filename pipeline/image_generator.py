@@ -18,7 +18,12 @@ from . import config
 
 # ─── DALL-E 3 ────────────────────────────────────────────────────────────────
 
-def generate_image_dalle(prompt: str, uid: int, max_retries: int = 3) -> Path:
+def generate_image_dalle(
+    prompt: str,
+    uid: int,
+    view_suffix: str | None = None,
+    max_retries: int = 3,
+) -> Path:
     """
     Generate an image with OpenAI DALL-E 3.
 
@@ -27,7 +32,8 @@ def generate_image_dalle(prompt: str, uid: int, max_retries: int = 3) -> Path:
     from openai import OpenAI
 
     client = OpenAI(api_key=config.OPENAI_API_KEY)
-    output_path = config.IMAGES_DIR / f"{uid}.png"
+    filename = f"{uid}_{view_suffix}.png" if view_suffix else f"{uid}.png"
+    output_path = config.IMAGES_DIR / filename
 
     for attempt in range(1, max_retries + 1):
         try:
@@ -63,6 +69,7 @@ def generate_image_gemini(
     prompt: str,
     uid: int,
     image_paths: list[Path] | None = None,
+    view_suffix: str | None = None,
     max_retries: int = 3,
 ) -> Path:
     """
@@ -94,7 +101,8 @@ def generate_image_gemini(
     )
 
     model_id = config.GEMINI_IMAGE_MODEL
-    output_path = config.IMAGES_DIR / f"{uid}.png"
+    filename = f"{uid}_{view_suffix}.png" if view_suffix else f"{uid}.png"
+    output_path = config.IMAGES_DIR / filename
 
     # ── Build multimodal contents ─────────────────────────────────────────
     if image_paths:
@@ -159,6 +167,7 @@ def generate_image(
     uid: int,
     generator: str | None = None,
     image_paths: list[Path] | None = None,
+    view_suffix: str | None = None,
 ) -> Path:
     """
     Generate an image using the configured (or specified) backend.
@@ -179,8 +188,8 @@ def generate_image(
     if gen == "dalle":
         if image_paths:
             print(f"  ⚠ Reference images are not supported for DALL-E, ignoring {len(image_paths)} image(s).")
-        return generate_image_dalle(prompt, uid)
+        return generate_image_dalle(prompt, uid, view_suffix=view_suffix)
     elif gen == "gemini":
-        return generate_image_gemini(prompt, uid, image_paths=image_paths)
+        return generate_image_gemini(prompt, uid, image_paths=image_paths, view_suffix=view_suffix)
     else:
         raise ValueError(f"Unknown image generator: {gen}. Use 'dalle' or 'gemini'.")

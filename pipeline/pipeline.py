@@ -21,6 +21,7 @@ from .report_parser import load_projections, load_reports
 from .prompt_builder import build_prompt_chain, extract_structured_prompt
 from .image_prompt_formatter import format_image_prompt
 from .image_generator import generate_image
+from .view_splitter import split_prompt_by_views
 
 
 def run_pipeline(
@@ -84,18 +85,24 @@ def run_pipeline(
             structured = extract_structured_prompt(record, chain=chain)
             # Carry reference image metadata into the structured prompt
             structured.reference_images = record.reference_images
-            entry["structured_prompt"] = structured.model_dump(exclude={"reference_images"})
+            entry["structured_prompt"] = structured.model_dump(
+                exclude={"reference_images", "view"}
+            )
         except Exception as e:
             print(f"\n  ✗ Failed to extract prompt for uid={record.uid}: {e}")
             entry["error_prompt"] = str(e)
             results.append(entry)
             continue
 
-        # ── Step 2: Format the image generation prompt ───────────────────
-        image_prompt = format_image_prompt(structured)
-        entry["image_prompt"] = image_prompt
+        # ── Step 1.5: Split by views ─────────────────────────────────────
+        view_prompts = split_prompt_by_views(structured, record.image)
+        if len(view_prompts) > 1:
+            view_names = [v for v, _ in view_prompts]
+            tqdm.write(
+                f"  📐 uid={record.uid} → {len(view_prompts)} views detected: {view_names}"
+            )
 
-        # ── Step 3: Resolve reference image paths (if available) ─────────
+        # ── Step 2: Resolve reference image paths (once per report) ──────
         ref_image_paths: list[Path] | None = None
         if images_dir_path and record.reference_images:
             resolved = []
@@ -107,31 +114,56 @@ def run_pipeline(
                     tqdm.write(f"  ⚠ Reference image not found: {img_path}")
             if resolved:
                 ref_image_paths = resolved
-                views = ", ".join(p.projection for p in record.reference_images if (images_dir_path / p.filename).exists())
-                tqdm.write(f"  📎 uid={record.uid} → {len(resolved)} reference image(s) ({views})")
-            # Record which files were used
+                ref_views = ", ".join(
+                    p.projection
+                    for p in record.reference_images
+                    if (images_dir_path / p.filename).exists()
+                )
+                tqdm.write(
+                    f"  📎 uid={record.uid} → {len(resolved)} reference image(s) ({ref_views})"
+                )
             entry["reference_images"] = [
                 {"filename": p.filename, "projection": p.projection}
                 for p in record.reference_images
             ]
 
-        # ── Step 4: Generate image ───────────────────────────────────────
-        if not skip_image_generation:
-            try:
-                image_path = generate_image(
-                    image_prompt,
-                    record.uid,
-                    generator=gen,
-                    image_paths=ref_image_paths,
-                )
-                entry["image_path"] = str(image_path)
-                tqdm.write(f"  ✓ uid={record.uid} → {image_path.name}")
-            except Exception as e:
-                print(f"\n  ✗ Image generation failed for uid={record.uid}: {e}")
-                entry["error_image"] = str(e)
-        else:
-            tqdm.write(f"  ✓ uid={record.uid} → prompt generated (image skipped)")
+        # ── Step 3: Generate images for each view ────────────────────────
+        views_data: list[dict] = []
+        for view_name, view_prompt in view_prompts:
+            view_entry: dict = {"view": view_name}
 
+            # Format the image generation prompt for this specific view
+            image_prompt = format_image_prompt(view_prompt)
+            view_entry["image_prompt"] = image_prompt
+
+            if not skip_image_generation:
+                try:
+                    image_path = generate_image(
+                        image_prompt,
+                        record.uid,
+                        generator=gen,
+                        image_paths=ref_image_paths,
+                        view_suffix=view_name,
+                    )
+                    view_entry["image_path"] = str(image_path)
+                    tqdm.write(
+                        f"  ✓ uid={record.uid} [{view_name or 'single'}] → {image_path.name}"
+                    )
+                except Exception as e:
+                    print(
+                        f"\n  ✗ Image generation failed for uid={record.uid}"
+                        f" [{view_name or 'single'}]: {e}"
+                    )
+                    view_entry["error_image"] = str(e)
+            else:
+                tqdm.write(
+                    f"  ✓ uid={record.uid} [{view_name or 'single'}]"
+                    " → prompt generated (image skipped)"
+                )
+
+            views_data.append(view_entry)
+
+        entry["views"] = views_data
         results.append(entry)
 
     # ── Save metadata ────────────────────────────────────────────────────
