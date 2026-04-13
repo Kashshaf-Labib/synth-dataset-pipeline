@@ -28,6 +28,7 @@ from .view_splitter import split_prompt_by_views
 def run_pipeline(
     csv_path: str | Path,
     limit: int | None = None,
+    offset: int | None = None,
     generator: str | None = None,
     skip_image_generation: bool = False,
     projections_csv: str | Path | None = None,
@@ -39,7 +40,8 @@ def run_pipeline(
     Parameters
     ----------
     csv_path              : path to indiana_reports.csv
-    limit                 : process only the first N reports
+    limit                 : process only the first N reports (after offset)
+    offset                : skip the first N reports
     generator             : "dalle" or "gemini" (overrides config)
     skip_image_generation : if True, stop after prompt generation (useful for testing)
     projections_csv       : optional path to indiana_projections.csv.
@@ -68,7 +70,7 @@ def run_pipeline(
 
     # ── Load reports ─────────────────────────────────────────────────────
     print(f"📂 Loading reports from {csv_path} ...")
-    records = load_reports(csv_path, limit=limit, projections=projections)
+    records = load_reports(csv_path, limit=limit, offset=offset, projections=projections)
     print(f"   → {len(records)} reports loaded\n")
 
     # ── Build the LangChain chain once (reused across all records) ────────
@@ -240,6 +242,12 @@ def main():
         help="Limit the number of reports to process (default: all)",
     )
     parser.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="Skip the first N reports in the dataset",
+    )
+    parser.add_argument(
         "--generator",
         type=str,
         choices=["dalle", "gemini"],
@@ -257,6 +265,7 @@ def main():
     run_pipeline(
         csv_path=args.csv,
         limit=args.limit,
+        offset=args.offset,
         generator=args.generator,
         skip_image_generation=args.skip_images,
         projections_csv=args.projections_csv,

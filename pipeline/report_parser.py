@@ -44,6 +44,7 @@ def load_projections(
 def load_reports(
     csv_path: str | Path,
     limit: Optional[int] = None,
+    offset: Optional[int] = None,
     projections: Optional[dict[int, list[ImageProjection]]] = None,
 ) -> list[ReportRecord]:
     """
@@ -73,6 +74,9 @@ def load_reports(
     df = df[
         (df["findings"].str.strip() != "") | (df["impression"].str.strip() != "")
     ].copy()
+
+    if offset is not None:
+        df = df.iloc[offset:]
 
     if limit is not None:
         df = df.head(limit)
