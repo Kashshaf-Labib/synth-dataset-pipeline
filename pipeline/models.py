@@ -81,3 +81,15 @@ class StructuredRadiologyPrompt(BaseModel):
 
     # Carries reference image info through to prompt formatting and generation
     reference_images: list[ImageProjection] = Field(default_factory=list)
+
+    # Original image dimensions and matched API aspect ratio — set by the
+    # pipeline when reference images are available, used to request the
+    # correct aspect ratio from the generation API (no post-processing resize).
+    source_dimensions: Optional[tuple[int, int]] = Field(
+        default=None,
+        description="(width, height) of the original reference image",
+    )
+    matched_aspect_ratio: Optional[str] = Field(
+        default=None,
+        description="Closest API-supported aspect ratio string, e.g. '3:4'",
+    )

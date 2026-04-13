@@ -14,13 +14,14 @@ import json
 import sys
 from pathlib import Path
 
+from PIL import Image as PILImage
 from tqdm import tqdm
 
 from . import config
 from .report_parser import load_projections, load_reports
 from .prompt_builder import build_prompt_chain, extract_structured_prompt
 from .image_prompt_formatter import format_image_prompt
-from .image_generator import generate_image
+from .image_generator import compute_best_aspect_ratio, generate_image
 from .view_splitter import split_prompt_by_views
 
 
@@ -104,6 +105,9 @@ def run_pipeline(
 
         # ── Step 2: Resolve reference image paths (once per report) ──────
         ref_image_paths: list[Path] | None = None
+        source_dimensions: tuple[int, int] | None = None
+        matched_ratio: str | None = None
+
         if images_dir_path and record.reference_images:
             resolved = []
             for proj in record.reference_images:
@@ -122,10 +126,33 @@ def run_pipeline(
                 tqdm.write(
                     f"  📎 uid={record.uid} → {len(resolved)} reference image(s) ({ref_views})"
                 )
+
+                # ── Read original image dimensions ────────────────────────
+                try:
+                    with PILImage.open(resolved[0]) as ref_img:
+                        source_dimensions = ref_img.size  # (width, height)
+                    matched_ratio = compute_best_aspect_ratio(*source_dimensions)
+                    tqdm.write(
+                        f"  📐 uid={record.uid} → source: {source_dimensions[0]}×{source_dimensions[1]}, "
+                        f"matched aspect ratio: {matched_ratio}"
+                    )
+                except Exception as dim_err:
+                    tqdm.write(
+                        f"  ⚠ Could not read dimensions from {resolved[0].name}: {dim_err}"
+                    )
+
             entry["reference_images"] = [
                 {"filename": p.filename, "projection": p.projection}
                 for p in record.reference_images
             ]
+            if source_dimensions:
+                entry["source_dimensions"] = {"width": source_dimensions[0], "height": source_dimensions[1]}
+                entry["matched_aspect_ratio"] = matched_ratio
+
+        # ── Propagate dimension info into structured prompt ───────────────
+        if source_dimensions and matched_ratio:
+            structured.source_dimensions = source_dimensions
+            structured.matched_aspect_ratio = matched_ratio
 
         # ── Step 3: Generate images for each view ────────────────────────
         views_data: list[dict] = []
@@ -144,6 +171,7 @@ def run_pipeline(
                         generator=gen,
                         image_paths=ref_image_paths,
                         view_suffix=view_name,
+                        source_dimensions=source_dimensions,
                     )
                     view_entry["image_path"] = str(image_path)
                     tqdm.write(

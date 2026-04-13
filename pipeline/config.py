@@ -31,6 +31,28 @@ DALLE_MODEL: str = os.getenv("DALLE_MODEL", "dall-e-3")
 DALLE_IMAGE_SIZE: str = os.getenv("DALLE_IMAGE_SIZE", "1024x1024")
 DALLE_IMAGE_QUALITY: str = os.getenv("DALLE_IMAGE_QUALITY", "standard")
 
+# ── Aspect ratio mappings ────────────────────────────────────────────────
+# Gemini: ratio string → decimal value (width / height) for closest-match
+GEMINI_SUPPORTED_ASPECT_RATIOS: dict[str, float] = {
+    "1:1":  1.0,
+    "4:3":  4 / 3,
+    "3:4":  3 / 4,
+    "16:9": 16 / 9,
+    "9:16": 9 / 16,
+    "3:2":  3 / 2,
+    "2:3":  2 / 3,
+    "5:4":  5 / 4,
+    "4:5":  4 / 5,
+    "21:9": 21 / 9,
+}
+
+# DALL-E 3: aspect ratio decimal → closest supported size string
+DALLE_SUPPORTED_SIZES: dict[str, float] = {
+    "1024x1024": 1.0,      # square
+    "1792x1024": 1792 / 1024,  # landscape (~1.75)
+    "1024x1792": 1024 / 1792,  # portrait  (~0.571)
+}
+
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"

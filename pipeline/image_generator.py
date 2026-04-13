@@ -2,6 +2,9 @@
 Image Generator — generates synthetic radiology images using DALL-E 3 or
 Google Vertex AI Gemini, driven by the formatted text prompt.
 Supports optional reference images as multimodal input for Gemini.
+Supports source_dimensions to preserve the original image aspect ratio
+natively (no post-processing resize) by passing the closest supported
+aspect ratio to the generation API.
 """
 
 from __future__ import annotations
@@ -16,16 +19,59 @@ from PIL import Image as PILImage
 from . import config
 
 
+# ─── Aspect Ratio Helpers ────────────────────────────────────────────────────
+
+def compute_best_aspect_ratio(
+    width: int,
+    height: int,
+    ratios: dict[str, float] | None = None,
+) -> str:
+    """
+    Find the closest supported aspect ratio for the given pixel dimensions.
+
+    Parameters
+    ----------
+    width   : source image width in pixels
+    height  : source image height in pixels
+    ratios  : mapping of ratio strings to decimal values.
+              Defaults to config.GEMINI_SUPPORTED_ASPECT_RATIOS.
+
+    Returns
+    -------
+    The ratio string with the smallest absolute difference (e.g. "3:4").
+    """
+    if ratios is None:
+        ratios = config.GEMINI_SUPPORTED_ASPECT_RATIOS
+
+    source_ratio = width / height
+    best_key = min(ratios, key=lambda k: abs(ratios[k] - source_ratio))
+    return best_key
+
+
+def _best_dalle_size(width: int, height: int) -> str:
+    """Pick the closest DALL-E 3 size string for the given dimensions."""
+    source_ratio = width / height
+    sizes = config.DALLE_SUPPORTED_SIZES
+    return min(sizes, key=lambda k: abs(sizes[k] - source_ratio))
+
+
 # ─── DALL-E 3 ────────────────────────────────────────────────────────────────
 
 def generate_image_dalle(
     prompt: str,
     uid: int,
     view_suffix: str | None = None,
+    source_dimensions: tuple[int, int] | None = None,
     max_retries: int = 3,
 ) -> Path:
     """
     Generate an image with OpenAI DALL-E 3.
+
+    Parameters
+    ----------
+    source_dimensions : optional (width, height) of the original image.
+                        When provided, the closest DALL-E size is selected
+                        automatically instead of using config.DALLE_IMAGE_SIZE.
 
     Returns the path to the saved PNG file.
     """
@@ -35,12 +81,22 @@ def generate_image_dalle(
     filename = f"{uid}_{view_suffix}.png" if view_suffix else f"{uid}.png"
     output_path = config.IMAGES_DIR / filename
 
+    # Determine size — use source dimensions when available
+    if source_dimensions:
+        dalle_size = _best_dalle_size(*source_dimensions)
+        print(
+            f"  📐 DALL-E size matched: {dalle_size} "
+            f"(source: {source_dimensions[0]}×{source_dimensions[1]})"
+        )
+    else:
+        dalle_size = config.DALLE_IMAGE_SIZE
+
     for attempt in range(1, max_retries + 1):
         try:
             response = client.images.generate(
                 model=config.DALLE_MODEL,
                 prompt=prompt,
-                size=config.DALLE_IMAGE_SIZE,
+                size=dalle_size,
                 quality=config.DALLE_IMAGE_QUALITY,
                 response_format="b64_json",
                 n=1,
@@ -70,6 +126,7 @@ def generate_image_gemini(
     uid: int,
     image_paths: list[Path] | None = None,
     view_suffix: str | None = None,
+    source_dimensions: tuple[int, int] | None = None,
     max_retries: int = 3,
 ) -> Path:
     """
@@ -80,12 +137,16 @@ def generate_image_gemini(
 
     Parameters
     ----------
-    prompt      : the formatted text prompt
-    uid         : report UID, used for output filename
-    image_paths : optional list of reference image Paths to include as
-                  multimodal input. When provided, images are prepended
-                  to the content as inline Parts before the text prompt.
-    max_retries : number of retry attempts on failure
+    prompt            : the formatted text prompt
+    uid               : report UID, used for output filename
+    image_paths       : optional list of reference image Paths to include as
+                        multimodal input. When provided, images are prepended
+                        to the content as inline Parts before the text prompt.
+    source_dimensions : optional (width, height) of the original image.
+                        When provided, the closest supported aspect ratio is
+                        passed via ImageConfig so the API generates at the
+                        correct geometry — no post-processing resize needed.
+    max_retries       : number of retry attempts on failure
 
     Returns
     -------
@@ -109,6 +170,16 @@ def generate_image_gemini(
     filename = f"{uid}_{view_suffix}.png" if view_suffix else f"{uid}.png"
     output_path = config.IMAGES_DIR / filename
 
+    # ── Compute aspect ratio from source dimensions ───────────────────────
+    aspect_ratio: str | None = None
+    if source_dimensions:
+        aspect_ratio = compute_best_aspect_ratio(*source_dimensions)
+        print(
+            f"  📐 Aspect ratio matched: {aspect_ratio} "
+            f"(source: {source_dimensions[0]}×{source_dimensions[1]}, "
+            f"ratio: {source_dimensions[0]/source_dimensions[1]:.3f})"
+        )
+
     # ── Build multimodal contents ─────────────────────────────────────────
     if image_paths:
         contents: list = []
@@ -130,15 +201,22 @@ def generate_image_gemini(
         contents = prompt
         ref_count = 0
 
+    # ── Build generation config ───────────────────────────────────────────
+    gen_config_kwargs: dict = {
+        "response_modalities": ["TEXT", "IMAGE"],
+        "candidate_count": 1,
+    }
+    if aspect_ratio:
+        gen_config_kwargs["image_config"] = genai_types.ImageConfig(
+            aspect_ratio=aspect_ratio,
+        )
+
     for attempt in range(1, max_retries + 1):
         try:
             response = client.models.generate_content(
                 model=model_id,
                 contents=contents,
-                config=genai_types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                    candidate_count=1,
-                ),
+                config=genai_types.GenerateContentConfig(**gen_config_kwargs),
             )
 
             # Extract image data from response parts
@@ -147,7 +225,12 @@ def generate_image_gemini(
                     img = PILImage.open(BytesIO(part.inline_data.data))
                     img.save(output_path)
                     ref_info = f", {ref_count} reference image(s)" if ref_count else ""
-                    print(f"  ✓ Image saved: {output_path.name} (model: {model_id}{ref_info})")
+                    ar_info = f", aspect_ratio={aspect_ratio}" if aspect_ratio else ""
+                    print(
+                        f"  ✓ Image saved: {output_path.name} "
+                        f"(model: {model_id}{ref_info}{ar_info}, "
+                        f"output: {img.size[0]}×{img.size[1]})"
+                    )
                     return output_path
 
             raise RuntimeError("No image data found in response")
@@ -173,16 +256,20 @@ def generate_image(
     generator: str | None = None,
     image_paths: list[Path] | None = None,
     view_suffix: str | None = None,
+    source_dimensions: tuple[int, int] | None = None,
 ) -> Path:
     """
     Generate an image using the configured (or specified) backend.
 
     Parameters
     ----------
-    prompt      : the formatted image generation prompt
-    uid         : report UID, used for filename
-    generator   : "dalle" or "gemini" (overrides config)
-    image_paths : optional reference image paths (Gemini only)
+    prompt            : the formatted image generation prompt
+    uid               : report UID, used for filename
+    generator         : "dalle" or "gemini" (overrides config)
+    image_paths       : optional reference image paths (Gemini only)
+    source_dimensions : optional (width, height) of the original image.
+                        Passed to the backend to generate at the closest
+                        native aspect ratio — no post-processing resize.
 
     Returns
     -------
@@ -193,8 +280,15 @@ def generate_image(
     if gen == "dalle":
         if image_paths:
             print(f"  ⚠ Reference images are not supported for DALL-E, ignoring {len(image_paths)} image(s).")
-        return generate_image_dalle(prompt, uid, view_suffix=view_suffix)
+        return generate_image_dalle(
+            prompt, uid, view_suffix=view_suffix,
+            source_dimensions=source_dimensions,
+        )
     elif gen == "gemini":
-        return generate_image_gemini(prompt, uid, image_paths=image_paths, view_suffix=view_suffix)
+        return generate_image_gemini(
+            prompt, uid, image_paths=image_paths,
+            view_suffix=view_suffix,
+            source_dimensions=source_dimensions,
+        )
     else:
         raise ValueError(f"Unknown image generator: {gen}. Use 'dalle' or 'gemini'.")

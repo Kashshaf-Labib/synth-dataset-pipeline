@@ -53,6 +53,24 @@ def format_image_prompt(sp: StructuredRadiologyPrompt) -> str:
             "in one image. The output must show exactly one projection."
         )
 
+    # ── IMAGE GEOMETRY (when source dimensions are known) ───────────────
+    if sp.matched_aspect_ratio and sp.source_dimensions:
+        w, h = sp.source_dimensions
+        if w > h:
+            orientation = "landscape"
+        elif h > w:
+            orientation = "portrait"
+        else:
+            orientation = "square"
+        sections.append(
+            "[IMAGE GEOMETRY]\n"
+            f"Generate a {orientation}-orientation radiograph matching a "
+            f"{sp.matched_aspect_ratio} aspect ratio "
+            f"(original source: {w}×{h} pixels). "
+            "Preserve the spatial proportions and field-of-view geometry "
+            "of the original image."
+        )
+
     # ── ANATOMICAL PROMPTING ─────────────────────────────────────────────
     if sp.anatomical_region:
         sections.append(
