@@ -4,7 +4,7 @@ Pydantic models for structured data flowing through the pipeline.
 
 from __future__ import annotations
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 
 class ImageProjection(BaseModel):
@@ -82,14 +82,24 @@ class StructuredRadiologyPrompt(BaseModel):
     # Carries reference image info through to prompt formatting and generation
     reference_images: list[ImageProjection] = Field(default_factory=list)
 
-    # Original image dimensions and matched API aspect ratio — set by the
-    # pipeline when reference images are available, used to request the
-    # correct aspect ratio from the generation API (no post-processing resize).
-    source_dimensions: Optional[tuple[int, int]] = Field(
-        default=None,
-        description="(width, height) of the original reference image",
-    )
-    matched_aspect_ratio: Optional[str] = Field(
-        default=None,
-        description="Closest API-supported aspect ratio string, e.g. '3:4'",
-    )
+    # Runtime-only metadata used by downstream prompt formatting and image
+    # generation. These are intentionally excluded from the structured-output
+    # schema because Vertex AI does not accept tuple-backed fields here.
+    _source_dimensions: Optional[tuple[int, int]] = PrivateAttr(default=None)
+    _matched_aspect_ratio: Optional[str] = PrivateAttr(default=None)
+
+    @property
+    def source_dimensions(self) -> Optional[tuple[int, int]]:
+        return self._source_dimensions
+
+    @source_dimensions.setter
+    def source_dimensions(self, value: Optional[tuple[int, int]]) -> None:
+        self._source_dimensions = value
+
+    @property
+    def matched_aspect_ratio(self) -> Optional[str]:
+        return self._matched_aspect_ratio
+
+    @matched_aspect_ratio.setter
+    def matched_aspect_ratio(self, value: Optional[str]) -> None:
+        self._matched_aspect_ratio = value
